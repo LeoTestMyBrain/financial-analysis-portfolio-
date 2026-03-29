@@ -1,77 +1,57 @@
-"""
-SET50 Bank Stock Screener
-Justified P/BV Model + Buy/Hold/Avoid Signal
-"""
-
 import yfinance as yf
 import pandas as pd
 import matplotlib.pyplot as plt
-from set50 import set50_banks_yf
 
-# ── 1. ดึงข้อมูล ─────────────────────────────
-def fetch_bank_data(tickers):
-    rows = []
-    for ticker in tickers:
-        info = yf.Ticker(ticker).info
-        rows.append({
-            "Ticker":   ticker.replace(".BK", ""),
-            "Price":    info.get("currentPrice"),
-            "ROE":      round(info.get("returnOnEquity", 0) * 100, 2),
-            "PBV":      round(info.get("priceToBook",    0), 2),
-            "PE":       round(info.get("trailingPE",     0), 2),
-            "DivYield": info.get("dividendYield"),
-        })
-    return pd.DataFrame(rows)
+# 1. ดึงข้อมูล
+banks = ["BBL.BK","KBANK.BK","SCB.BK","KTB.BK",
+         "KKP.BK","TISCO.BK","TTB.BK","TCAP.BK"]
 
-# ── 2. คำนวณ Justified Price ──────────────────
-def calc_justified(df, g=0.03, CoE=0.10):
-    df["BV"]         = round(df["Price"] / df["PBV"], 2)
-    df["Just_PBV"]   = round((df["ROE"] / 100 - g) / (CoE - g), 2)
-    df["Fair_Price"] = round(df["Just_PBV"] * df["BV"], 2)
-    df["Upside"]     = round(
-        ((df["Fair_Price"] - df["Price"]) / df["Price"]) * 100, 1
-    )
-    return df
+rows = []
+for ticker in banks:
+    info = yf.Ticker(ticker).info
+    rows.append({
+        "Ticker":   ticker.replace(".BK",""),
+        "Price":    info.get("currentPrice"),
+        "ROE":      round(info.get("returnOnEquity", 0) * 100, 2),
+        "PBV":      round(info.get("priceToBook", 0), 2),
+        "DivYield": info.get("dividendYield"),
+    })
 
-# ── 3. Signal ─────────────────────────────────
-def signal(upside):
-    if upside > 15:  return "BUY"
-    elif upside > 0: return "HOLD"
-    else:            return "AVOID"
+df = pd.DataFrame(rows)
 
-# ── 4. Chart ──────────────────────────────────
-def plot_screener(df):
-    colors = {
-        "BUY":   "#1D9E75",
-        "HOLD":  "#EF9F27",
-        "AVOID": "#E24B4A",
-    }
-    bar_colors = df["Signal"].map(colors)
+# 2. คำนวณ
+g, CoE = 0.03, 0.10
+df["BV"]         = round(df["Price"] / df["PBV"], 2)
+df["Just_PBV"]   = round((df["ROE"]/100 - g) / (CoE - g), 2)
+df["Fair_Price"] = round(df["Just_PBV"] * df["BV"], 2)
+df["Upside"]     = round(((df["Fair_Price"] - df["Price"]) / df["Price"]) * 100, 1)
 
-    plt.figure(figsize=(10, 5))
-    plt.bar(df["Ticker"], df["Upside"], color=bar_colors)
-    plt.axhline(y=0,  color="black",   linewidth=0.8)
-    plt.axhline(y=15, color="#1D9E75", linestyle="--", label="BUY > 15%")
-    plt.title("Justified Price Upside — SET50 Banks")
-    plt.xlabel("Ticker")
-    plt.ylabel("Upside %")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig("justified_price.png", dpi=150, bbox_inches="tight")
-    plt.show()
-    print("บันทึก justified_price.png แล้วค่ะ!")
+# 3. Signal
+def signal(u):
+    if u > 15:  return "BUY"
+    elif u > 0: return "HOLD"
+    else:       return "AVOID"
 
-# ── Main ──────────────────────────────────────
-if __name__ == "__main__":
-    print("กำลังดึงข้อมูล...")
-    df = fetch_bank_data(set50_banks_yf)
+df["Signal"] = df["Upside"].apply(signal)
+df = df.sort_values("Upside", ascending=False)
 
-    df = calc_justified(df)
-    df["Signal"] = df["Upside"].apply(signal)
-    df = df.sort_values("Upside", ascending=False)
+# 4. Chart
+colors = {"BUY":"#1D9E75", "HOLD":"#EF9F27", "AVOID":"#E24B4A"}
+bar_colors = df["Signal"].map(colors)
 
-    print("\n=== Stock Screener — SET50 Banks ===")
-    print(df[["Ticker","Price","Fair_Price",
-              "Upside","Signal","DivYield"]].to_string(index=False))
+plt.figure(figsize=(10, 5))
+plt.bar(df["Ticker"], df["Upside"], color=bar_colors)
+plt.axhline(y=0,  color="black", linewidth=0.8)
+plt.axhline(y=15, color="#1D9E75", linestyle="--", label="BUY threshold")
+plt.title("Justified Price Upside — SET50 Banks")
+plt.xlabel("Ticker")
+plt.ylabel("Upside %")
+plt.legend()
+plt.tight_layout()
+plt.savefig("justified_price.png", dpi=150, bbox_inches="tight")
+plt.show()
+print("บันทึก justified_price.png แล้วค่ะ!")
 
-    plot_screener(df)
+# 5. สรุป
+print("\n=== Stock Screener ===")
+print(df[["Ticker","Price","Fair_Price","Upside","Signal","DivYield"]].to_string(index=False))
